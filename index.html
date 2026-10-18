@@ -116,6 +116,12 @@ body { display: flex; flex-direction: column; }
 .cal-day .more { font-size: .56rem; color: var(--fg3); text-align: center; }
 
 .cal-hero { background: linear-gradient(135deg, var(--accent), var(--accent) 60%, color-mix(in srgb, var(--accent) 70%, #000)); color: var(--accent-btn-fg); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--shadow); }
+.due-soon { background: var(--warn-light); border: 1px solid var(--warn); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 10px; }
+.due-soon-icon { font-size: 1.1rem; flex-shrink: 0; }
+.due-soon-title { font-size: .76rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--warn); margin-bottom: 3px; }
+.due-soon-row { font-size: .84rem; color: var(--fg); display: flex; align-items: center; gap: 6px; }
+.due-soon-row + .due-soon-row { margin-top: 3px; }
+.due-soon-when { font-size: .68rem; font-weight: 600; padding: 1px 6px; border-radius: 10px; background: var(--warn); color: #fff; flex-shrink: 0; }
 .cal-hero .hero-day { font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; opacity: .85; }
 .cal-hero .hero-date { font-size: 1.5rem; font-weight: 700; margin: 2px 0 6px; }
 .cal-hero .hero-next { font-size: .8rem; opacity: .92; display: flex; align-items: center; gap: 6px; }
@@ -272,6 +278,7 @@ body { display: flex; flex-direction: column; }
         <p>Link your Google Calendar so bill due dates and reminders show up for both of you.</p>
         <button class="btn-primary" id="googleConnectBtn" onclick="connectGoogleCalendar()">Connect Google Calendar</button>
       </div>
+      <div id="calDueSoon"></div>
       <div class="cal-hero" id="calHero"></div>
       <div class="cal-nav">
         <button onclick="calShiftMonth(-1)">‹</button>
@@ -469,7 +476,7 @@ async function checkGoogleStatus() {
     const {connected}=await res.json();
     if(connected){
       chip.className='status-chip connected'; chip.textContent='Connected'; cta.style.display='none';
-      fetchGoogleEvents();
+      fetchGoogleEvents(); fetchDueSoon();
     } else {
       chip.className='status-chip pending'; chip.textContent='Not connected'; cta.style.display='';
     }
@@ -503,6 +510,31 @@ function renderCalHero() {
     <div class="hero-date">${today.toLocaleDateString('en-US',{month:'long',day:'numeric'})}</div>
     <div class="hero-next">${next ? `<span class="hero-dot" style="background:${GCAL_COLORS[next.colorId]||'#fff'}"></span>${esc(next.summary||'')}${todayEvents.length>1?` + ${todayEvents.length-1} more today`:''}` : 'Nothing on the calendar today 🎉'}</div>
   `;
+}
+
+// ===== "Due soon" banner: surfaces anything happening today or tomorrow,
+// independent of which month you're currently browsing. =====
+async function fetchDueSoon() {
+  const box = document.getElementById('calDueSoon');
+  if(!box) return;
+  try {
+    const res = await fetch(`${BACKEND}/api/google/events`); // default: next 20 upcoming
+    if(!res.ok) { box.innerHTML=''; return; }
+    const data = await res.json();
+    const today = ymd(new Date()), tmrw = ymd(new Date(Date.now()+86400000));
+    const soon = (data.events||[]).filter(e=>{ const d=eventDay(e); return d===today||d===tmrw; });
+    if(!soon.length){ box.innerHTML=''; return; }
+    box.innerHTML = `<div class="due-soon">
+      <div class="due-soon-icon">🔔</div>
+      <div style="flex:1;min-width:0">
+        <div class="due-soon-title">Coming up</div>
+        ${soon.map(e=>{
+          const d=eventDay(e);
+          return `<div class="due-soon-row"><span class="due-soon-when">${d===today?'TODAY':'TOMORROW'}</span>${esc(e.summary||'')}</div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  } catch(e){ console.error(e); box.innerHTML=''; }
 }
 
 async function fetchGoogleEvents() {
@@ -678,7 +710,7 @@ async function saveEvent() {
   try {
     const res=await fetch(`${BACKEND}/api/google/events`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,date,notes,colorId:evSelectedColor})});
     if(!res.ok) throw new Error('save failed');
-    hideAddEventModal(); toast('Added to calendar'); fetchGoogleEvents();
+    hideAddEventModal(); toast('Added to calendar'); fetchGoogleEvents(); fetchDueSoon();
   } catch(e){ toast('Could not save — try again'); console.error(e); }
 }
 
@@ -779,7 +811,7 @@ function saveTransaction() {
 
 function toast(msg) { document.querySelectorAll('.toast').forEach(t=>t.remove()); const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2600); }
 
-load(); updateMonthLabel(); renderAll(); resumePlaidOAuth(); checkGoogleStatus(); checkWhoAmI(); fetchTasks();
+load(); updateMonthLabel(); renderAll(); resumePlaidOAuth(); checkGoogleStatus(); checkWhoAmI(); fetchTasks(); fetchDueSoon();
 if(window.location.hash==='#calendar') switchSection('calendar');
 if('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 </script>
