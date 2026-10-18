@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>CPHome</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#2d6a4f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CPHome">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap">
 <style>
 :root {
@@ -99,6 +106,16 @@ body { display: flex; flex-direction: column; }
 .nav-btn.active { color: var(--accent); }
 .nav-btn svg { width: 22px; height: 22px; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; display: flex; align-items: flex-end; justify-content: center; }
+.task-group { margin-bottom: 18px; }
+.task-group-hd { font-size: .8rem; font-weight: 600; color: var(--fg2); margin-bottom: 8px; }
+.task-item { background: var(--surface); border-radius: 8px; padding: 11px 14px; display: flex; align-items: center; gap: 12px; box-shadow: var(--shadow); margin-bottom: 8px; }
+.task-check { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: .7rem; color: var(--accent-btn-fg); }
+.task-check.done { background: var(--accent); border-color: var(--accent); }
+.task-main { flex: 1; min-width: 0; }
+.task-name { font-size: .88rem; font-weight: 500; }
+.task-name.done { text-decoration: line-through; color: var(--fg3); }
+.task-due { font-size: .72rem; color: var(--fg3); margin-top: 1px; }
+.task-del { background: none; border: none; color: var(--fg3); cursor: pointer; font-size: 1rem; padding: 2px 4px; flex-shrink: 0; }
 .modal { background: var(--surface); border-radius: 18px 18px 0 0; padding: 20px; padding-bottom: max(20px, env(safe-area-inset-bottom, 0px)); width: 100%; max-width: 480px; animation: slideUp .25s ease; }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 .modal-title { font-size: 1rem; font-weight: 600; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
@@ -186,6 +203,22 @@ body { display: flex; flex-direction: column; }
       </div>
       <div class="account-list" id="calendar-events"></div>
     </section>
+
+    <section id="sec-tasks" class="section">
+      <div class="section-hd"><div class="section-title">Goals &amp; Tasks</div><button class="btn-primary" style="width:auto;padding:7px 14px;font-size:.78rem" onclick="showAddTaskModal()">+ Add</button></div>
+      <div class="task-group">
+        <div class="task-group-hd">💚 Shared</div>
+        <div id="tasks-Shared"></div>
+      </div>
+      <div class="task-group">
+        <div class="task-group-hd">🧔 Paul's</div>
+        <div id="tasks-Paul"></div>
+      </div>
+      <div class="task-group">
+        <div class="task-group-hd">👩 Krissa's</div>
+        <div id="tasks-Krissa"></div>
+      </div>
+    </section>
   </div>
   <nav class="bottom-nav">
     <button class="nav-btn active" onclick="switchSection('overview',this)">
@@ -202,6 +235,9 @@ body { display: flex; flex-direction: column; }
     </button>
     <button class="nav-btn" onclick="switchSection('calendar',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Calendar
+    </button>
+    <button class="nav-btn" onclick="switchSection('tasks',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Goals
     </button>
   </nav>
 </div>
@@ -235,6 +271,15 @@ body { display: flex; flex-direction: column; }
   </div>
 </div>
 
+<div class="modal-overlay" id="whoModal" style="display:none">
+  <div class="modal">
+    <div class="modal-title">Who's this?</div>
+    <p style="font-size:.85rem;color:var(--fg2);margin:0 0 16px">So CPHome knows whose goals and tasks to tag. You can switch anytime from the Goals tab.</p>
+    <button class="btn-primary" style="margin-bottom:10px" onclick="setWhoAmI('Paul')">🧔 Paul</button>
+    <button class="btn-primary" onclick="setWhoAmI('Krissa')">👩 Krissa</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="addEventModal" style="display:none">
   <div class="modal">
     <div class="modal-title">Add Reminder <button class="modal-close" onclick="hideAddEventModal()">✕</button></div>
@@ -242,6 +287,20 @@ body { display: flex; flex-direction: column; }
     <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="ev-date" type="date"></div>
     <div class="form-group"><label class="form-label">Notes (optional)</label><input class="form-input" id="ev-notes" type="text" placeholder="e.g. Autopay from joint account"></div>
     <button class="btn-primary" onclick="saveEvent()">Add to Calendar</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addTaskModal" style="display:none">
+  <div class="modal">
+    <div class="modal-title">Add Goal / Task <button class="modal-close" onclick="hideAddTaskModal()">✕</button></div>
+    <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="task-title" type="text" placeholder="e.g. Save $500 for Christmas"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Belongs to</label>
+        <select class="form-select" id="task-owner"><option value="Shared">💚 Shared</option><option value="Paul">🧔 Paul's</option><option value="Krissa">👩 Krissa's</option></select>
+      </div>
+      <div class="form-group"><label class="form-label">Due (optional)</label><input class="form-input" id="task-due" type="date"></div>
+    </div>
+    <button class="btn-primary" onclick="saveTask()">Save</button>
   </div>
 </div>
 
@@ -268,8 +327,9 @@ function switchSection(sec, btn) {
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('sec-'+sec).classList.add('active');
-  btn.classList.add('active');
+  (btn || navBtn(sec)).classList.add('active');
 }
+function navBtn(sec) { return document.querySelector(`.nav-btn[onclick*="'${sec}'"]`); }
 
 function txForMonth() {
   const y=currentMonth.getFullYear(), m=currentMonth.getMonth();
@@ -354,12 +414,72 @@ async function fetchGoogleEvents() {
 }
 
 function showAddEventModal() {
-  if(document.getElementById('google-chip').textContent!=='Connected'){ toast('Connect your Google Calendar first'); switchSection('calendar', document.querySelector('.nav-btn:last-child')); return; }
+  if(document.getElementById('google-chip').textContent!=='Connected'){ toast('Connect your Google Calendar first'); switchSection('calendar'); return; }
   document.getElementById('ev-date').value=new Date().toISOString().split('T')[0];
   document.getElementById('ev-title').value=''; document.getElementById('ev-notes').value='';
   document.getElementById('addEventModal').style.display='flex';
 }
 function hideAddEventModal() { document.getElementById('addEventModal').style.display='none'; }
+// ===== Who's using the app (no password — just a name tag for a 2-person household) =====
+function whoAmI() { try { return localStorage.getItem('cpm_who'); } catch(e){ return null; } }
+function setWhoAmI(name) {
+  try { localStorage.setItem('cpm_who', name); } catch(e){}
+  document.getElementById('whoModal').style.display='none';
+  renderTasks();
+}
+function checkWhoAmI() {
+  if(!whoAmI()) document.getElementById('whoModal').style.display='flex';
+}
+function switchWho() { document.getElementById('whoModal').style.display='flex'; }
+
+// ===== Goals & Tasks =====
+let tasks = [];
+async function fetchTasks() {
+  try {
+    const res = await fetch(`${BACKEND}/api/tasks`);
+    if(!res.ok) return;
+    const data = await res.json();
+    tasks = data.tasks || [];
+    renderTasks();
+  } catch(e){ console.error(e); }
+}
+function renderTasks() {
+  ['Shared','Paul','Krissa'].forEach(owner=>{
+    const el = document.getElementById('tasks-'+owner);
+    const list = tasks.filter(t=>t.owner===owner);
+    if(!list.length){ el.innerHTML = '<div class="empty-state" style="padding:16px"><div class="empty-icon" style="font-size:1.6rem;margin-bottom:4px">✓</div>Nothing here yet.</div>'; return; }
+    el.innerHTML = list.map(t=>`<div class="task-item">
+      <div class="task-check ${t.done?'done':''}" onclick="toggleTask('${t.id}',${!t.done})">${t.done?'✓':''}</div>
+      <div class="task-main"><div class="task-name ${t.done?'done':''}">${esc(t.title)}</div>${t.due?`<div class="task-due">Due ${fmtDate(t.due)}</div>`:''}</div>
+      <button class="task-del" onclick="deleteTask('${t.id}')">✕</button>
+    </div>`).join('');
+  });
+}
+function showAddTaskModal() {
+  document.getElementById('task-title').value='';
+  document.getElementById('task-due').value='';
+  document.getElementById('task-owner').value = whoAmI() || 'Shared';
+  document.getElementById('addTaskModal').style.display='flex';
+}
+function hideAddTaskModal() { document.getElementById('addTaskModal').style.display='none'; }
+async function saveTask() {
+  const title=document.getElementById('task-title').value.trim(), owner=document.getElementById('task-owner').value, due=document.getElementById('task-due').value || null;
+  if(!title){ toast('Give it a title'); return; }
+  try {
+    const res=await fetch(`${BACKEND}/api/tasks`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,owner,due})});
+    if(!res.ok) throw new Error('save failed');
+    hideAddTaskModal(); toast('Added'); fetchTasks();
+  } catch(e){ toast('Could not save — try again'); console.error(e); }
+}
+async function toggleTask(id, done) {
+  const t = tasks.find(t=>t.id===id); if(t){ t.done=done; renderTasks(); } // optimistic
+  try { await fetch(`${BACKEND}/api/tasks/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({done})}); } catch(e){ console.error(e); }
+}
+async function deleteTask(id) {
+  tasks = tasks.filter(t=>t.id!==id); renderTasks(); // optimistic
+  try { await fetch(`${BACKEND}/api/tasks/${id}`,{method:'DELETE'}); } catch(e){ console.error(e); }
+}
+
 async function saveEvent() {
   const title=document.getElementById('ev-title').value.trim(), date=document.getElementById('ev-date').value, notes=document.getElementById('ev-notes').value.trim();
   if(!title||!date){ toast('Fill in a title and date'); return; }
@@ -414,7 +534,7 @@ async function resumePlaidOAuth() {
   const link_token = sessionStorage.getItem('cpm_link_token');
   if (!link_token) return; // nothing to resume (e.g. page reloaded later)
   const btn=document.getElementById('connectBtn');
-  switchSection('accounts', document.querySelector('.nav-btn:last-child'));
+  switchSection('accounts');
   btn.textContent='Finishing connection…'; btn.disabled=true;
   await loadScript('https://cdn.plaid.com/link/v2/stable/link-initialize.js');
   window.Plaid.create({ token: link_token, receivedRedirectUri: window.location.href, ...plaidHandlers(btn) }).open();
@@ -467,8 +587,9 @@ function saveTransaction() {
 
 function toast(msg) { document.querySelectorAll('.toast').forEach(t=>t.remove()); const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2600); }
 
-load(); updateMonthLabel(); renderAll(); resumePlaidOAuth(); checkGoogleStatus();
-if(window.location.hash==='#calendar') switchSection('calendar', document.querySelector('.nav-btn:last-child'));
+load(); updateMonthLabel(); renderAll(); resumePlaidOAuth(); checkGoogleStatus(); checkWhoAmI(); fetchTasks();
+if(window.location.hash==='#calendar') switchSection('calendar');
+if('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 </script>
 </body>
 </html>
