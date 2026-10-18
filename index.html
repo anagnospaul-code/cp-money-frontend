@@ -367,11 +367,22 @@ body { display: flex; flex-direction: column; }
   </div>
 </div>
 
+<div class="modal-overlay" id="dayViewModal" style="display:none">
+  <div class="modal">
+    <div class="modal-title"><span id="dayViewTitle"></span> <button class="modal-close" onclick="hideDayView()">✕</button></div>
+    <div class="account-list" id="dayViewList" style="margin-bottom:14px"></div>
+    <button class="btn-primary" id="dayViewAddBtn">+ Add Reminder</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="addEventModal" style="display:none">
   <div class="modal">
     <div class="modal-title">Add Reminder <button class="modal-close" onclick="hideAddEventModal()">✕</button></div>
     <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="ev-title" type="text" placeholder="e.g. Rent due"></div>
-    <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="ev-date" type="date"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="ev-date" type="date"></div>
+      <div class="form-group"><label class="form-label">Time (optional)</label><input class="form-input" id="ev-time" type="time"></div>
+    </div>
     <div class="form-group"><label class="form-label">Notes (optional)</label><input class="form-input" id="ev-notes" type="text" placeholder="e.g. Autopay from joint account"></div>
     <div class="form-group"><label class="form-label">Color</label><div class="color-row" id="ev-color-row"></div></div>
     <button class="btn-primary" onclick="saveEvent()">Add to Calendar</button>
@@ -494,6 +505,7 @@ let calSelectedDay = null; // 'YYYY-MM-DD' or null (null = show full upcoming li
 
 function ymd(d) { return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function eventDay(e) { const w=e.start?.date||e.start?.dateTime; return w ? w.split('T')[0] : null; }
+function eventTime(e) { return e.start?.dateTime ? new Date(e.start.dateTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : null; }
 
 let calSlideDir = 0;
 function calShiftMonth(dir) { calSlideDir=dir; calMonth.setMonth(calMonth.getMonth()+dir); calSelectedDay=null; fetchGoogleEvents(); }
@@ -529,8 +541,8 @@ async function fetchDueSoon() {
       <div style="flex:1;min-width:0">
         <div class="due-soon-title">Coming up</div>
         ${soon.map(e=>{
-          const d=eventDay(e);
-          return `<div class="due-soon-row"><span class="due-soon-when">${d===today?'TODAY':'TOMORROW'}</span>${esc(e.summary||'')}</div>`;
+          const d=eventDay(e), t=eventTime(e);
+          return `<div class="due-soon-row"><span class="due-soon-when">${d===today?'TODAY':'TOMORROW'}</span>${esc(e.summary||'')}${t?` <span style="opacity:.7">· ${t}</span>`:''}</div>`;
         }).join('')}
       </div>
     </div>`;
@@ -585,18 +597,39 @@ function renderCalGrid() {
 }
 
 function calSelectDay(dateStr) {
-  // Tapping a day just highlights it on the grid now (no bottom list anymore).
-  // If that day already has events, offer to add one — otherwise jump to
-  // adding a reminder for it.
-  calSelectedDay = (calSelectedDay===dateStr) ? null : dateStr;
+  calSelectedDay = dateStr;
   renderCalGrid();
-  if (calSelectedDay) {
-    const dayEvents = calEvents.filter(e=>eventDay(e)===calSelectedDay);
-    if (dayEvents.length) {
-      const names = dayEvents.map(e=>e.summary||'(untitled)').join(', ');
-      toast(`${fmtDate(calSelectedDay)}: ${names}`);
-    }
+  openDayView(dateStr);
+}
+
+function openDayView(dateStr) {
+  const dayEvents = calEvents.filter(e=>eventDay(e)===dateStr)
+    .slice().sort((a,b)=>(eventTime(a)?a.start.dateTime:'')
+      .localeCompare(eventTime(b)?b.start.dateTime:''));
+  document.getElementById('dayViewTitle').textContent = fmtDate(dateStr);
+  const list = document.getElementById('dayViewList');
+  if (!dayEvents.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📅</div>No events this day.</div>';
+  } else {
+    list.innerHTML = dayEvents.map(e=>{
+      const time = eventTime(e);
+      const color = GCAL_COLORS[e.colorId] || 'var(--accent)';
+      return `<div class="account-card" style="display:flex;gap:10px;align-items:stretch">
+        <div class="event-color-bar" style="background:${color}"></div>
+        <div style="flex:1;min-width:0">
+          <div class="account-top"><div><div class="account-name">${esc(e.summary||'(untitled)')}</div>
+          <div class="account-institution">${time||'All day'}</div></div></div>
+          ${e.description?`<div class="tx-meta">${esc(e.description)}</div>`:''}
+        </div></div>`;
+    }).join('');
   }
+  document.getElementById('dayViewAddBtn').onclick = () => { hideDayView(); showAddEventModal(dateStr); };
+  document.getElementById('dayViewModal').style.display = 'flex';
+}
+function hideDayView() {
+  document.getElementById('dayViewModal').style.display = 'none';
+  calSelectedDay = null;
+  renderCalGrid();
 }
 
 // Google Calendar's own event color palette (colorId -> hex), same ids it uses.
@@ -613,10 +646,10 @@ function renderColorRow() {
 }
 function pickEvColor(id) { evSelectedColor=id; renderColorRow(); }
 
-function showAddEventModal() {
+function showAddEventModal(prefillDate) {
   if(document.getElementById('google-chip').textContent!=='Connected'){ toast('Connect your Google Calendar first'); switchSection('calendar'); return; }
-  document.getElementById('ev-date').value=new Date().toISOString().split('T')[0];
-  document.getElementById('ev-title').value=''; document.getElementById('ev-notes').value='';
+  document.getElementById('ev-date').value=prefillDate||new Date().toISOString().split('T')[0];
+  document.getElementById('ev-title').value=''; document.getElementById('ev-notes').value=''; document.getElementById('ev-time').value='';
   evSelectedColor='7'; renderColorRow();
   document.getElementById('addEventModal').style.display='flex';
 }
@@ -701,10 +734,11 @@ async function deleteTask(id) {
 }
 
 async function saveEvent() {
-  const title=document.getElementById('ev-title').value.trim(), date=document.getElementById('ev-date').value, notes=document.getElementById('ev-notes').value.trim();
+  const title=document.getElementById('ev-title').value.trim(), date=document.getElementById('ev-date').value,
+        time=document.getElementById('ev-time').value, notes=document.getElementById('ev-notes').value.trim();
   if(!title||!date){ toast('Fill in a title and date'); return; }
   try {
-    const res=await fetch(`${BACKEND}/api/google/events`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,date,notes,colorId:evSelectedColor})});
+    const res=await fetch(`${BACKEND}/api/google/events`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,date,time:time||undefined,notes,colorId:evSelectedColor})});
     if(!res.ok) throw new Error('save failed');
     hideAddEventModal(); toast('Added to calendar'); fetchGoogleEvents(); fetchDueSoon();
   } catch(e){ toast('Could not save — try again'); console.error(e); }
