@@ -101,6 +101,16 @@ body { display: flex; flex-direction: column; }
 .status-chip.pending { background: var(--warn-light); color: var(--warn); }
 .status-chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .plaid-status { background: var(--surface); border-radius: 10px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; box-shadow: var(--shadow); font-size: .84rem; }
+.cal-nav { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 10px; font-size: .9rem; font-weight: 600; }
+.cal-nav button { background: var(--surface); border: 1px solid var(--border); color: var(--fg); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 1rem; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; background: var(--surface); border-radius: 12px; padding: 10px; box-shadow: var(--shadow); }
+.cal-dow { text-align: center; font-size: .65rem; font-weight: 600; letter-spacing: .04em; color: var(--fg3); padding-bottom: 4px; text-transform: uppercase; }
+.cal-day { aspect-ratio: 1; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: .8rem; cursor: pointer; background: none; border: none; color: var(--fg); font-family: inherit; }
+.cal-day.other-month { color: var(--fg3); opacity: .4; }
+.cal-day.today { font-weight: 700; color: var(--accent); }
+.cal-day.selected { background: var(--accent); color: var(--accent-btn-fg); }
+.cal-day .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
+.cal-day.selected .dot { background: var(--accent-btn-fg); }
 .bottom-nav { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); display: flex; padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 10; }
 .nav-btn { flex: 1; background: none; border: none; padding: 10px 4px; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; color: var(--fg3); font-family: inherit; font-size: .65rem; font-weight: 500; letter-spacing: .03em; transition: color .15s; }
 .nav-btn.active { color: var(--accent); }
@@ -201,6 +211,13 @@ body { display: flex; flex-direction: column; }
         <p>Link your Google Calendar so bill due dates and reminders show up for both of you.</p>
         <button class="btn-primary" id="googleConnectBtn" onclick="connectGoogleCalendar()">Connect Google Calendar</button>
       </div>
+      <div class="cal-nav">
+        <button onclick="calShiftMonth(-1)">‹</button>
+        <span id="calMonthLabel"></span>
+        <button onclick="calShiftMonth(1)">›</button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="section-hd" style="margin-top:16px"><div class="section-title" id="calDayLabel">Upcoming</div></div>
       <div class="account-list" id="calendar-events"></div>
     </section>
 
@@ -399,18 +416,69 @@ function connectGoogleCalendar() {
   window.location.href = `${BACKEND}/api/google/auth`;
 }
 
+// ===== Calendar month grid =====
+let calMonth = new Date(); calMonth.setDate(1);
+let calEvents = []; // raw events for the currently-loaded month
+let calSelectedDay = null; // 'YYYY-MM-DD' or null (null = show full upcoming list)
+
+function ymd(d) { return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function eventDay(e) { const w=e.start?.date||e.start?.dateTime; return w ? w.split('T')[0] : null; }
+
+function calShiftMonth(dir) { calMonth.setMonth(calMonth.getMonth()+dir); calSelectedDay=null; fetchGoogleEvents(); }
+
 async function fetchGoogleEvents() {
-  const list=document.getElementById('calendar-events');
+  document.getElementById('calMonthLabel').textContent = calMonth.toLocaleDateString('en-US',{month:'long',year:'numeric'});
   try {
-    const res=await fetch(`${BACKEND}/api/google/events`);
+    const start = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1);
+    const end = new Date(calMonth.getFullYear(), calMonth.getMonth()+1, 1);
+    const res = await fetch(`${BACKEND}/api/google/events?timeMin=${ymd(start)}&timeMax=${ymd(end)}`);
     if(!res.ok) return;
-    const {events}=await res.json();
-    if(!events?.length){ list.innerHTML='<div class="empty-state"><div class="empty-icon">📅</div>No upcoming events.</div>'; return; }
-    list.innerHTML=events.map(e=>{
-      const when=e.start?.date||e.start?.dateTime;
-      return `<div class="account-card"><div class="account-top"><div><div class="account-name">${esc(e.summary||'(untitled)')}</div><div class="account-institution">${when?fmtDate(when.split('T')[0]):''}</div></div></div>${e.description?`<div class="tx-meta">${esc(e.description)}</div>`:''}</div>`;
-    }).join('');
-  } catch(e){ console.error(e); }
+    const data = await res.json();
+    calEvents = data.events || [];
+  } catch(e){ console.error(e); calEvents=[]; }
+  renderCalGrid();
+  renderCalEventList();
+}
+
+function renderCalGrid() {
+  const grid = document.getElementById('calGrid');
+  const y=calMonth.getFullYear(), m=calMonth.getMonth();
+  const firstDow = new Date(y,m,1).getDay();
+  const daysInMonth = new Date(y,m+1,0).getDate();
+  const daysInPrev = new Date(y,m,0).getDate();
+  const todayStr = ymd(new Date());
+  const byDay = {};
+  calEvents.forEach(e=>{ const d=eventDay(e); if(d){ (byDay[d]=byDay[d]||[]).push(e); } });
+
+  let cells = ['Su','Mo','Tu','We','Th','Fr','Sa'].map(d=>`<div class="cal-dow">${d}</div>`).join('');
+  for(let i=firstDow-1;i>=0;i--) cells += `<button class="cal-day other-month" disabled>${daysInPrev-i}</button>`;
+  for(let d=1; d<=daysInMonth; d++){
+    const dateStr = ymd(new Date(y,m,d));
+    const has = !!byDay[dateStr];
+    const cls = ['cal-day', dateStr===todayStr?'today':'', dateStr===calSelectedDay?'selected':''].filter(Boolean).join(' ');
+    cells += `<button class="${cls}" onclick="calSelectDay('${dateStr}')">${d}${has?'<span class="dot"></span>':''}</button>`;
+  }
+  const totalSoFar = firstDow + daysInMonth;
+  const trailing = (7 - (totalSoFar % 7)) % 7;
+  for(let d=1; d<=trailing; d++) cells += `<button class="cal-day other-month" disabled>${d}</button>`;
+  grid.innerHTML = cells;
+}
+
+function calSelectDay(dateStr) {
+  calSelectedDay = (calSelectedDay===dateStr) ? null : dateStr;
+  renderCalGrid();
+  renderCalEventList();
+}
+
+function renderCalEventList() {
+  const list = document.getElementById('calendar-events'), label = document.getElementById('calDayLabel');
+  const shown = calSelectedDay ? calEvents.filter(e=>eventDay(e)===calSelectedDay) : calEvents;
+  label.textContent = calSelectedDay ? fmtDate(calSelectedDay) : 'This month';
+  if(!shown.length){ list.innerHTML='<div class="empty-state"><div class="empty-icon">📅</div>No events.</div>'; return; }
+  list.innerHTML = shown.map(e=>{
+    const when = eventDay(e);
+    return `<div class="account-card"><div class="account-top"><div><div class="account-name">${esc(e.summary||'(untitled)')}</div><div class="account-institution">${when?fmtDate(when):''}</div></div></div>${e.description?`<div class="tx-meta">${esc(e.description)}</div>`:''}</div>`;
+  }).join('');
 }
 
 function showAddEventModal() {
