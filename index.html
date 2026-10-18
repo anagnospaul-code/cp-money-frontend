@@ -114,6 +114,23 @@ body { display: flex; flex-direction: column; }
 .cal-day.selected { background: var(--accent-light); }
 .cal-day .chip { font-size: .56rem; line-height: 1.3; padding: 1px 4px; border-radius: 4px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-day .more { font-size: .56rem; color: var(--fg3); text-align: center; }
+
+.cal-hero { background: linear-gradient(135deg, var(--accent), var(--accent) 60%, color-mix(in srgb, var(--accent) 70%, #000)); color: var(--accent-btn-fg); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--shadow); }
+.cal-hero .hero-day { font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; opacity: .85; }
+.cal-hero .hero-date { font-size: 1.5rem; font-weight: 700; margin: 2px 0 6px; }
+.cal-hero .hero-next { font-size: .8rem; opacity: .92; display: flex; align-items: center; gap: 6px; }
+.cal-hero .hero-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; flex-shrink: 0; }
+
+.cal-grid-wrap { overflow: hidden; }
+.cal-grid { animation: calSlideIn .22s ease; }
+@keyframes calSlideIn { from { opacity: 0; transform: translateX(var(--cal-slide-dir, 0)); } to { opacity: 1; transform: translateX(0); } }
+
+@keyframes confettiPop {
+  0% { transform: translate(-50%,-50%) scale(0) rotate(0deg); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--cx)), calc(-50% + var(--cy))) scale(1) rotate(var(--cr)); opacity: 0; }
+}
+.confetti-piece { position: fixed; top: 0; left: 0; width: 6px; height: 6px; border-radius: 1px; pointer-events: none; z-index: 999; animation: confettiPop .7s ease-out forwards; }
 .color-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .color-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
 .color-swatch.selected { border-color: var(--fg); }
@@ -218,13 +235,14 @@ body { display: flex; flex-direction: column; }
         <p>Link your Google Calendar so bill due dates and reminders show up for both of you.</p>
         <button class="btn-primary" id="googleConnectBtn" onclick="connectGoogleCalendar()">Connect Google Calendar</button>
       </div>
+      <div class="cal-hero" id="calHero"></div>
       <div class="cal-nav">
         <button onclick="calShiftMonth(-1)">‹</button>
         <span id="calMonthLabel"></span>
         <button onclick="calShiftMonth(1)">›</button>
         <button class="cal-today-btn" onclick="calGoToday()">Today</button>
       </div>
-      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-grid-wrap"><div class="cal-grid" id="calGrid"></div></div>
       <div class="section-hd" style="margin-top:16px"><div class="section-title" id="calDayLabel">Upcoming</div></div>
       <div class="account-list" id="calendar-events"></div>
     </section>
@@ -433,8 +451,22 @@ let calSelectedDay = null; // 'YYYY-MM-DD' or null (null = show full upcoming li
 function ymd(d) { return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function eventDay(e) { const w=e.start?.date||e.start?.dateTime; return w ? w.split('T')[0] : null; }
 
-function calShiftMonth(dir) { calMonth.setMonth(calMonth.getMonth()+dir); calSelectedDay=null; fetchGoogleEvents(); }
-function calGoToday() { calMonth=new Date(); calMonth.setDate(1); calSelectedDay=ymd(new Date()); fetchGoogleEvents(); }
+let calSlideDir = 0;
+function calShiftMonth(dir) { calSlideDir=dir; calMonth.setMonth(calMonth.getMonth()+dir); calSelectedDay=null; fetchGoogleEvents(); }
+function calGoToday() { calSlideDir=0; calMonth=new Date(); calMonth.setDate(1); calSelectedDay=ymd(new Date()); fetchGoogleEvents(); }
+
+function renderCalHero() {
+  const hero = document.getElementById('calHero');
+  const today = new Date();
+  const todayEvents = calMonth.getFullYear()===today.getFullYear() && calMonth.getMonth()===today.getMonth()
+    ? calEvents.filter(e=>eventDay(e)===ymd(today)) : [];
+  const next = todayEvents[0];
+  hero.innerHTML = `
+    <div class="hero-day">${today.toLocaleDateString('en-US',{weekday:'long'})}</div>
+    <div class="hero-date">${today.toLocaleDateString('en-US',{month:'long',day:'numeric'})}</div>
+    <div class="hero-next">${next ? `<span class="hero-dot" style="background:${GCAL_COLORS[next.colorId]||'#fff'}"></span>${esc(next.summary||'')}${todayEvents.length>1?` + ${todayEvents.length-1} more today`:''}` : 'Nothing on the calendar today 🎉'}</div>
+  `;
+}
 
 async function fetchGoogleEvents() {
   document.getElementById('calMonthLabel').textContent = calMonth.toLocaleDateString('en-US',{month:'long',year:'numeric'});
@@ -446,6 +478,7 @@ async function fetchGoogleEvents() {
     const data = await res.json();
     calEvents = data.events || [];
   } catch(e){ console.error(e); calEvents=[]; }
+  renderCalHero();
   renderCalGrid();
   renderCalEventList();
 }
@@ -474,7 +507,13 @@ function renderCalGrid() {
   const totalSoFar = firstDow + daysInMonth;
   const trailing = (7 - (totalSoFar % 7)) % 7;
   for(let d=1; d<=trailing; d++) cells += `<button class="cal-day other-month" disabled><span class="daynum">${d}</span></button>`;
+  grid.style.setProperty('--cal-slide-dir', (calSlideDir>0?'14px':calSlideDir<0?'-14px':'0'));
   grid.innerHTML = cells;
+  // restart the CSS slide-in animation (innerHTML alone doesn't retrigger it on the same element)
+  grid.style.animation = 'none';
+  void grid.offsetWidth;
+  grid.style.animation = '';
+  calSlideDir = 0;
 }
 
 function calSelectDay(dateStr) {
@@ -546,7 +585,7 @@ function renderTasks() {
     const list = tasks.filter(t=>t.owner===owner);
     if(!list.length){ el.innerHTML = '<div class="empty-state" style="padding:16px"><div class="empty-icon" style="font-size:1.6rem;margin-bottom:4px">✓</div>Nothing here yet.</div>'; return; }
     el.innerHTML = list.map(t=>`<div class="task-item">
-      <div class="task-check ${t.done?'done':''}" onclick="toggleTask('${t.id}',${!t.done})">${t.done?'✓':''}</div>
+      <div class="task-check ${t.done?'done':''}" onclick="toggleTask('${t.id}',${!t.done},this)">${t.done?'✓':''}</div>
       <div class="task-main"><div class="task-name ${t.done?'done':''}">${esc(t.title)}</div>${t.due?`<div class="task-due">Due ${fmtDate(t.due)}</div>`:''}</div>
       <button class="task-del" onclick="deleteTask('${t.id}')">✕</button>
     </div>`).join('');
@@ -568,9 +607,28 @@ async function saveTask() {
     hideAddTaskModal(); toast('Added'); fetchTasks();
   } catch(e){ toast('Could not save — try again'); console.error(e); }
 }
-async function toggleTask(id, done) {
+async function toggleTask(id, done, el) {
+  const rect = el ? el.getBoundingClientRect() : null; // capture before renderTasks() replaces the DOM
   const t = tasks.find(t=>t.id===id); if(t){ t.done=done; renderTasks(); } // optimistic
+  if(done && rect) confettiBurst(rect);
   try { await fetch(`${BACKEND}/api/tasks/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({done})}); } catch(e){ console.error(e); }
+}
+
+function confettiBurst(rect) {
+  const x = rect.left + rect.width/2, y = rect.top + rect.height/2;
+  const colors = ['#2d6a4f','#52b788','#f6bf26','#e67c73','#039be5'];
+  for(let i=0;i<14;i++){
+    const p = document.createElement('div');
+    p.className = 'confetti-piece';
+    const angle = Math.random()*Math.PI*2, dist = 40+Math.random()*40;
+    p.style.left = x+'px'; p.style.top = y+'px';
+    p.style.background = colors[i%colors.length];
+    p.style.setProperty('--cx', Math.cos(angle)*dist+'px');
+    p.style.setProperty('--cy', Math.sin(angle)*dist+'px');
+    p.style.setProperty('--cr', (Math.random()*360)+'deg');
+    document.body.appendChild(p);
+    setTimeout(()=>p.remove(), 750);
+  }
 }
 async function deleteTask(id) {
   tasks = tasks.filter(t=>t.id!==id); renderTasks(); // optimistic
