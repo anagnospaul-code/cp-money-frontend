@@ -172,6 +172,20 @@ body { display: flex; flex-direction: column; }
       </div>
       <div class="account-list" id="account-list"></div>
     </section>
+
+    <section id="sec-calendar" class="section">
+      <div class="section-hd"><div class="section-title">Shared Calendar</div><button class="btn-primary" style="width:auto;padding:7px 14px;font-size:.78rem" onclick="showAddEventModal()">+ Add Reminder</button></div>
+      <div class="plaid-status">
+        <span>Google Calendar</span>
+        <span class="status-chip pending" id="google-chip">Not connected</span>
+      </div>
+      <div class="connect-cta" id="google-connect-cta">
+        <h3>Connect your shared calendar</h3>
+        <p>Link your Google Calendar so bill due dates and reminders show up for both of you.</p>
+        <button class="btn-primary" id="googleConnectBtn" onclick="connectGoogleCalendar()">Connect Google Calendar</button>
+      </div>
+      <div class="account-list" id="calendar-events"></div>
+    </section>
   </div>
   <nav class="bottom-nav">
     <button class="nav-btn active" onclick="switchSection('overview',this)">
@@ -185,6 +199,9 @@ body { display: flex; flex-direction: column; }
     </button>
     <button class="nav-btn" onclick="switchSection('accounts',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>Accounts
+    </button>
+    <button class="nav-btn" onclick="switchSection('calendar',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Calendar
     </button>
   </nav>
 </div>
@@ -215,6 +232,16 @@ body { display: flex; flex-direction: column; }
       <select class="form-select" id="tx-type"><option value="debit">Expense</option><option value="credit">Income</option></select>
     </div>
     <button class="btn-primary" onclick="saveTransaction()">Save Transaction</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addEventModal" style="display:none">
+  <div class="modal">
+    <div class="modal-title">Add Reminder <button class="modal-close" onclick="hideAddEventModal()">✕</button></div>
+    <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="ev-title" type="text" placeholder="e.g. Rent due"></div>
+    <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="ev-date" type="date"></div>
+    <div class="form-group"><label class="form-label">Notes (optional)</label><input class="form-input" id="ev-notes" type="text" placeholder="e.g. Autopay from joint account"></div>
+    <button class="btn-primary" onclick="saveEvent()">Add to Calendar</button>
   </div>
 </div>
 
@@ -293,6 +320,55 @@ function renderAccounts() {
 }
 
 function renderAll() { renderOverview(); renderTransactions(); renderBudget(); renderAccounts(); }
+
+async function checkGoogleStatus() {
+  const chip=document.getElementById('google-chip'), cta=document.getElementById('google-connect-cta');
+  try {
+    const res=await fetch(`${BACKEND}/api/google/status`);
+    const {connected}=await res.json();
+    if(connected){
+      chip.className='status-chip connected'; chip.textContent='Connected'; cta.style.display='none';
+      fetchGoogleEvents();
+    } else {
+      chip.className='status-chip pending'; chip.textContent='Not connected'; cta.style.display='';
+    }
+  } catch(e){ console.error(e); }
+}
+
+function connectGoogleCalendar() {
+  window.location.href = `${BACKEND}/api/google/auth`;
+}
+
+async function fetchGoogleEvents() {
+  const list=document.getElementById('calendar-events');
+  try {
+    const res=await fetch(`${BACKEND}/api/google/events`);
+    if(!res.ok) return;
+    const {events}=await res.json();
+    if(!events?.length){ list.innerHTML='<div class="empty-state"><div class="empty-icon">📅</div>No upcoming events.</div>'; return; }
+    list.innerHTML=events.map(e=>{
+      const when=e.start?.date||e.start?.dateTime;
+      return `<div class="account-card"><div class="account-top"><div><div class="account-name">${esc(e.summary||'(untitled)')}</div><div class="account-institution">${when?fmtDate(when.split('T')[0]):''}</div></div></div>${e.description?`<div class="tx-meta">${esc(e.description)}</div>`:''}</div>`;
+    }).join('');
+  } catch(e){ console.error(e); }
+}
+
+function showAddEventModal() {
+  if(document.getElementById('google-chip').textContent!=='Connected'){ toast('Connect your Google Calendar first'); switchSection('calendar', document.querySelector('.nav-btn:last-child')); return; }
+  document.getElementById('ev-date').value=new Date().toISOString().split('T')[0];
+  document.getElementById('ev-title').value=''; document.getElementById('ev-notes').value='';
+  document.getElementById('addEventModal').style.display='flex';
+}
+function hideAddEventModal() { document.getElementById('addEventModal').style.display='none'; }
+async function saveEvent() {
+  const title=document.getElementById('ev-title').value.trim(), date=document.getElementById('ev-date').value, notes=document.getElementById('ev-notes').value.trim();
+  if(!title||!date){ toast('Fill in a title and date'); return; }
+  try {
+    const res=await fetch(`${BACKEND}/api/google/events`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,date,notes})});
+    if(!res.ok) throw new Error('save failed');
+    hideAddEventModal(); toast('Added to calendar'); fetchGoogleEvents();
+  } catch(e){ toast('Could not save — try again'); console.error(e); }
+}
 
 function plaidHandlers(btn) {
   return {
@@ -391,7 +467,8 @@ function saveTransaction() {
 
 function toast(msg) { document.querySelectorAll('.toast').forEach(t=>t.remove()); const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2600); }
 
-load(); updateMonthLabel(); renderAll(); resumePlaidOAuth();
+load(); updateMonthLabel(); renderAll(); resumePlaidOAuth(); checkGoogleStatus();
+if(window.location.hash==='#calendar') switchSection('calendar', document.querySelector('.nav-btn:last-child'));
 </script>
 </body>
 </html>
