@@ -111,6 +111,11 @@ body { display: flex; flex-direction: column; }
 .cal-day.selected { background: var(--accent); color: var(--accent-btn-fg); }
 .cal-day .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
 .cal-day.selected .dot { background: var(--accent-btn-fg); }
+.cal-day .dots { display: flex; gap: 2px; }
+.color-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.color-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.color-swatch.selected { border-color: var(--fg); }
+.event-color-bar { width: 4px; align-self: stretch; border-radius: 3px; flex-shrink: 0; }
 .bottom-nav { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); display: flex; padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 10; }
 .nav-btn { flex: 1; background: none; border: none; padding: 10px 4px; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; color: var(--fg3); font-family: inherit; font-size: .65rem; font-weight: 500; letter-spacing: .03em; transition: color .15s; }
 .nav-btn.active { color: var(--accent); }
@@ -303,6 +308,7 @@ body { display: flex; flex-direction: column; }
     <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="ev-title" type="text" placeholder="e.g. Rent due"></div>
     <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="ev-date" type="date"></div>
     <div class="form-group"><label class="form-label">Notes (optional)</label><input class="form-input" id="ev-notes" type="text" placeholder="e.g. Autopay from joint account"></div>
+    <div class="form-group"><label class="form-label">Color</label><div class="color-row" id="ev-color-row"></div></div>
     <button class="btn-primary" onclick="saveEvent()">Add to Calendar</button>
   </div>
 </div>
@@ -454,9 +460,10 @@ function renderCalGrid() {
   for(let i=firstDow-1;i>=0;i--) cells += `<button class="cal-day other-month" disabled>${daysInPrev-i}</button>`;
   for(let d=1; d<=daysInMonth; d++){
     const dateStr = ymd(new Date(y,m,d));
-    const has = !!byDay[dateStr];
+    const dayEvents = byDay[dateStr]||[];
     const cls = ['cal-day', dateStr===todayStr?'today':'', dateStr===calSelectedDay?'selected':''].filter(Boolean).join(' ');
-    cells += `<button class="${cls}" onclick="calSelectDay('${dateStr}')">${d}${has?'<span class="dot"></span>':''}</button>`;
+    const dots = dayEvents.slice(0,3).map(e=>`<span class="dot" style="background:${GCAL_COLORS[e.colorId]||'currentColor'}"></span>`).join('');
+    cells += `<button class="${cls}" onclick="calSelectDay('${dateStr}')">${d}${dots?`<span class="dots">${dots}</span>`:''}</button>`;
   }
   const totalSoFar = firstDow + daysInMonth;
   const trailing = (7 - (totalSoFar % 7)) % 7;
@@ -477,14 +484,30 @@ function renderCalEventList() {
   if(!shown.length){ list.innerHTML='<div class="empty-state"><div class="empty-icon">📅</div>No events.</div>'; return; }
   list.innerHTML = shown.map(e=>{
     const when = eventDay(e);
-    return `<div class="account-card"><div class="account-top"><div><div class="account-name">${esc(e.summary||'(untitled)')}</div><div class="account-institution">${when?fmtDate(when):''}</div></div></div>${e.description?`<div class="tx-meta">${esc(e.description)}</div>`:''}</div>`;
+    const color = GCAL_COLORS[e.colorId] || 'var(--accent)';
+    return `<div class="account-card" style="display:flex;gap:10px;align-items:stretch"><div class="event-color-bar" style="background:${color}"></div><div style="flex:1;min-width:0"><div class="account-top"><div><div class="account-name">${esc(e.summary||'(untitled)')}</div><div class="account-institution">${when?fmtDate(when):''}</div></div></div>${e.description?`<div class="tx-meta">${esc(e.description)}</div>`:''}</div></div>`;
   }).join('');
 }
+
+// Google Calendar's own event color palette (colorId -> hex), same ids it uses.
+const GCAL_COLORS = {
+  '1':'#7986cb', '2':'#33b679', '3':'#8e24aa', '4':'#e67c73', '5':'#f6bf26',
+  '6':'#f4511e', '7':'#039be5', '8':'#616161', '9':'#3f51b5', '10':'#0b8043', '11':'#d50000'
+};
+let evSelectedColor = '7'; // Peacock, a sane default
+
+function renderColorRow() {
+  document.getElementById('ev-color-row').innerHTML = Object.entries(GCAL_COLORS).map(([id,hex])=>
+    `<div class="color-swatch ${id===evSelectedColor?'selected':''}" style="background:${hex}" onclick="pickEvColor('${id}')"></div>`
+  ).join('');
+}
+function pickEvColor(id) { evSelectedColor=id; renderColorRow(); }
 
 function showAddEventModal() {
   if(document.getElementById('google-chip').textContent!=='Connected'){ toast('Connect your Google Calendar first'); switchSection('calendar'); return; }
   document.getElementById('ev-date').value=new Date().toISOString().split('T')[0];
   document.getElementById('ev-title').value=''; document.getElementById('ev-notes').value='';
+  evSelectedColor='7'; renderColorRow();
   document.getElementById('addEventModal').style.display='flex';
 }
 function hideAddEventModal() { document.getElementById('addEventModal').style.display='none'; }
@@ -552,7 +575,7 @@ async function saveEvent() {
   const title=document.getElementById('ev-title').value.trim(), date=document.getElementById('ev-date').value, notes=document.getElementById('ev-notes').value.trim();
   if(!title||!date){ toast('Fill in a title and date'); return; }
   try {
-    const res=await fetch(`${BACKEND}/api/google/events`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,date,notes})});
+    const res=await fetch(`${BACKEND}/api/google/events`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,date,notes,colorId:evSelectedColor})});
     if(!res.ok) throw new Error('save failed');
     hideAddEventModal(); toast('Added to calendar'); fetchGoogleEvents();
   } catch(e){ toast('Could not save — try again'); console.error(e); }
