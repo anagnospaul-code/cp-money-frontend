@@ -25,6 +25,7 @@
   --accent-light: #d8eee5;
   --accent-btn-fg: #ffffff;
   --danger: #c0392b;
+  --danger-light: #fbe4e1;
   --warn: #b7791f;
   --warn-light: #fef3cd;
   --good: #276749;
@@ -36,7 +37,7 @@
     --bg: #111210; --surface: #1c1d1a; --surface2: #252623;
     --border: #2e2f2b; --fg: #f0ede6; --fg2: #9a9790; --fg3: #6a6760;
     --accent: #52b788; --accent-light: #1a3328; --accent-btn-fg: #0d1f18;
-    --danger: #e57373; --warn: #f6c244; --warn-light: #2a2010;
+    --danger: #e57373; --danger-light: #2e1a18; --warn: #f6c244; --warn-light: #2a2010;
     --good: #52b788; --good-light: #1a3328;
     --shadow: 0 1px 4px rgba(0,0,0,.3);
   }
@@ -117,6 +118,15 @@ body { display: flex; flex-direction: column; }
 
 .cal-hero { background: linear-gradient(135deg, var(--accent), var(--accent) 60%, color-mix(in srgb, var(--accent) 70%, #000)); color: var(--accent-btn-fg); border-radius: 14px; padding: 16px 18px; margin-bottom: 14px; box-shadow: var(--shadow); }
 .due-soon { background: var(--warn-light); border: 1px solid var(--warn); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 10px; }
+.due-soon.spend-alert { background: var(--danger-light); border-color: var(--danger); }
+.due-soon.spend-alert .due-soon-title { color: var(--danger); }
+.due-soon.spend-alert .due-soon-when { background: var(--danger); }
+.sub-card { background: var(--surface); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.sub-name { font-size: .88rem; font-weight: 500; }
+.sub-meta { font-size: .72rem; color: var(--fg2); margin-top: 2px; }
+.sub-cancel { font-size: .72rem; font-weight: 600; color: var(--danger); text-decoration: none; white-space: nowrap; flex-shrink: 0; }
+.note-row { background: var(--surface2); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; font-size: .82rem; }
+.note-who { font-weight: 600; font-size: .72rem; color: var(--accent); }
 .due-soon-icon { font-size: 1.1rem; flex-shrink: 0; }
 .due-soon-title { font-size: .76rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--warn); margin-bottom: 3px; }
 .due-soon-row { font-size: .84rem; color: var(--fg); display: flex; align-items: center; gap: 6px; }
@@ -222,6 +232,7 @@ body { display: flex; flex-direction: column; }
   </header>
   <div class="content">
     <section id="sec-overview" class="section active">
+      <div id="spendAlerts"></div>
       <div class="summary-grid">
         <div class="summary-card full">
           <div class="card-label">Spent this month</div>
@@ -254,6 +265,12 @@ body { display: flex; flex-direction: column; }
     <section id="sec-budget" class="section">
       <div class="section-hd"><div class="section-title">Budget</div></div>
       <div class="budget-list" id="budget-list"></div>
+      <div class="section-hd" style="margin-top:18px">
+        <div class="section-title">Possible Subscriptions</div>
+        <button class="btn-secondary" style="font-size:.72rem;padding:5px 10px" onclick="syncBillReminders()">🔔 Add to Calendar</button>
+      </div>
+      <p style="font-size:.78rem;color:var(--fg2);margin:-6px 0 12px">Recurring charges we spotted in your transactions. Tap a cancel link if you don't need it anymore — nothing is cancelled automatically.</p>
+      <div class="account-list" id="subs-list"></div>
     </section>
     <section id="sec-accounts" class="section">
       <div class="section-hd"><div class="section-title">Connected Accounts</div></div>
@@ -291,6 +308,27 @@ body { display: flex; flex-direction: column; }
       <div class="cal-grid-wrap"><div class="cal-grid" id="calGrid"></div></div>
     </section>
 
+    <section id="sec-networth" class="section">
+      <div class="summary-grid">
+        <div class="summary-card full">
+          <div class="card-label">Net Worth</div>
+          <div class="card-value" id="nw-total">$0.00</div>
+          <div class="card-sub" id="nw-sub"></div>
+        </div>
+        <div class="summary-card">
+          <div class="card-label">Bank accounts</div>
+          <div class="card-value good" id="nw-bank">$0</div>
+        </div>
+        <div class="summary-card">
+          <div class="card-label">Investments</div>
+          <div class="card-value" id="nw-invest">$0</div>
+        </div>
+      </div>
+      <div class="section-hd"><div class="section-title">Investment &amp; Other Accounts</div><button class="btn-primary" style="width:auto;padding:7px 14px;font-size:.78rem" onclick="showAddInvestModal()">+ Add</button></div>
+      <p style="font-size:.78rem;color:var(--fg2);margin:-6px 0 12px">Manually tracked for now — add balances for brokerage, retirement, or crypto accounts to see your full net worth alongside your bank accounts.</p>
+      <div class="account-list" id="invest-list"></div>
+    </section>
+
     <section id="sec-tasks" class="section">
       <div class="section-hd"><div class="section-title">Goals &amp; Tasks</div><button class="btn-primary" style="width:auto;padding:7px 14px;font-size:.78rem" onclick="showAddTaskModal()">+ Add</button></div>
       <div class="task-group">
@@ -320,6 +358,9 @@ body { display: flex; flex-direction: column; }
     <button class="nav-btn" onclick="switchSection('accounts',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>Accounts
     </button>
+    <button class="nav-btn" onclick="switchSection('networth',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Net Worth
+    </button>
     <button class="nav-btn" onclick="switchSection('calendar',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Calendar
     </button>
@@ -327,6 +368,32 @@ body { display: flex; flex-direction: column; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Goals
     </button>
   </nav>
+</div>
+
+<div class="modal-overlay" id="addInvestModal" style="display:none">
+  <div class="modal">
+    <div class="modal-title">Add Investment / Other Account <button class="modal-close" onclick="hideAddInvestModal()">✕</button></div>
+    <div class="form-group"><label class="form-label">Name</label><input class="form-input" id="inv-name" type="text" placeholder="e.g. Fidelity 401k"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type</label>
+        <select class="form-select" id="inv-type"><option>Brokerage</option><option>401k / Retirement</option><option>Crypto</option><option>Real Estate</option><option>Other</option></select>
+      </div>
+      <div class="form-group"><label class="form-label">Balance ($)</label><input class="form-input" id="inv-balance" type="number" step="0.01" placeholder="0.00"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Belongs to</label>
+      <select class="form-select" id="inv-owner"><option value="Shared">💚 Shared</option><option value="Paul">🧔 Paul's</option><option value="Krissa">👩 Krissa's</option></select>
+    </div>
+    <button class="btn-primary" onclick="saveInvestment()">Save</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="txNotesModal" style="display:none">
+  <div class="modal">
+    <div class="modal-title"><span id="txNotesTitle"></span> <button class="modal-close" onclick="hideTxNotes()">✕</button></div>
+    <div id="txNotesList" style="margin-bottom:14px"></div>
+    <div class="form-group"><label class="form-label">Add a note</label><input class="form-input" id="tx-note-text" type="text" placeholder="e.g. This was the anniversary dinner"></div>
+    <button class="btn-primary" onclick="saveTxNote()">Add Note</button>
+  </div>
 </div>
 
 <div class="modal-overlay" id="addModal" style="display:none">
@@ -455,7 +522,7 @@ function renderOverview() {
 function renderTxList(id, txs) {
   const el=document.getElementById(id);
   if(!txs.length){ el.innerHTML='<div class="empty-state"><div class="empty-icon">📋</div>No transactions yet this month.</div>'; return; }
-  el.innerHTML=txs.map(t=>`<div class="tx-item"><div class="tx-icon">${catIcons[t.category]||'📦'}</div><div class="tx-main"><div class="tx-name">${esc(t.name)}</div><div class="tx-meta">${fmtDate(t.date)} · ${esc(t.category)} · ${esc(t.who||'')}</div></div><div class="tx-amount ${t.type}">${t.type==='credit'?'+':'−'}${fmt(t.amount)}</div></div>`).join('');
+  el.innerHTML=txs.map(t=>`<div class="tx-item" style="cursor:pointer" onclick='openTxNotes(${JSON.stringify(t.transaction_id||t.id)},${JSON.stringify(t.name)})'><div class="tx-icon">${catIcons[t.category]||'📦'}</div><div class="tx-main"><div class="tx-name">${esc(t.name)}</div><div class="tx-meta">${fmtDate(t.date)} · ${esc(t.category)} · ${esc(t.who||'')}</div></div><div class="tx-amount ${t.type}">${t.type==='credit'?'+':'−'}${fmt(t.amount)}</div></div>`).join('');
 }
 
 function renderTransactions() { renderTxList('all-tx-list', txForMonth()); }
@@ -841,7 +908,129 @@ function saveTransaction() {
 
 function toast(msg) { document.querySelectorAll('.toast').forEach(t=>t.remove()); const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2600); }
 
+// ===== Spending alerts (Overview banner) =====
+async function fetchSpendingAlerts() {
+  const box = document.getElementById('spendAlerts');
+  if(!box) return;
+  try {
+    const res = await fetch(`${BACKEND}/api/spending-alerts`);
+    if(!res.ok) { box.innerHTML=''; return; }
+    const data = await res.json();
+    const alerts = data.alerts||[];
+    if(!alerts.length){ box.innerHTML=''; return; }
+    box.innerHTML = `<div class="due-soon spend-alert">
+      <div class="due-soon-icon">⚠️</div>
+      <div style="flex:1;min-width:0">
+        <div class="due-soon-title">Heads up</div>
+        ${alerts.slice(0,4).map(a=>`<div class="due-soon-row">${esc(a.name)} — ${fmt(a.amount)} <span style="opacity:.7">(${esc(a.reason)})</span></div>`).join('')}
+      </div>
+    </div>`;
+  } catch(e){ console.error(e); box.innerHTML=''; }
+}
+
+// ===== Subscriptions (Budget tab) =====
+async function fetchSubscriptions() {
+  const list = document.getElementById('subs-list');
+  if(!list) return;
+  try {
+    const res = await fetch(`${BACKEND}/api/subscriptions`);
+    if(!res.ok){ list.innerHTML='<div class="empty-state"><div class="empty-icon">🔍</div>Connect your bank to see detected subscriptions.</div>'; return; }
+    const data = await res.json();
+    const subs = data.subscriptions||[];
+    if(!subs.length){ list.innerHTML='<div class="empty-state"><div class="empty-icon">✅</div>No recurring charges detected yet.</div>'; return; }
+    list.innerHTML = subs.map(s=>`<div class="sub-card"><div><div class="sub-name">${esc(s.merchant)} — ${fmt(s.amount)}</div><div class="sub-meta">${s.cadence==='weekly'?'Weekly':'Monthly'} · next ~${fmtDate(s.nextEstimatedDate)} · seen ${s.occurrences}x</div></div><a class="sub-cancel" href="${s.cancelUrl}" target="_blank" rel="noopener">Cancel ↗</a></div>`).join('');
+  } catch(e){ console.error(e); list.innerHTML=''; }
+}
+async function syncBillReminders() {
+  if(document.getElementById('google-chip').textContent!=='Connected'){ toast('Connect your Google Calendar first'); switchSection('calendar'); return; }
+  try {
+    const res = await fetch(`${BACKEND}/api/subscriptions/sync-reminders`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({daysBefore:3})});
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error||'failed');
+    toast(data.created>0?`Added ${data.created} reminder${data.created===1?'':'s'} to the calendar`:'All subscription reminders are already on the calendar');
+    fetchDueSoon();
+  } catch(e){ console.error(e); toast('Could not sync reminders — try again'); }
+}
+
+// ===== Net worth (investments) =====
+let investments = [];
+async function fetchInvestments() {
+  try {
+    const res = await fetch(`${BACKEND}/api/investments`);
+    const data = await res.json();
+    investments = data.investments||[];
+  } catch(e){ console.error(e); investments=[]; }
+  renderNetWorth();
+}
+function renderNetWorth() {
+  const bankTotal = accounts.reduce((s,a)=>s+Math.abs(a.balances?.current||0),0);
+  const investTotal = investments.reduce((s,i)=>s+(i.balance||0),0);
+  document.getElementById('nw-total').textContent = fmt(bankTotal+investTotal);
+  document.getElementById('nw-sub').textContent = `${accounts.length} bank account${accounts.length===1?'':'s'} + ${investments.length} other`;
+  document.getElementById('nw-bank').textContent = fmt(bankTotal);
+  document.getElementById('nw-invest').textContent = fmt(investTotal);
+  const list = document.getElementById('invest-list');
+  if(!investments.length){ list.innerHTML='<div class="empty-state"><div class="empty-icon">📈</div>No investment accounts added yet.</div>'; return; }
+  const ownerIcon = {Paul:'🧔',Krissa:'👩',Shared:'💚'};
+  list.innerHTML = investments.map(i=>`<div class="account-card"><div class="account-top"><div><div class="account-name">${esc(i.name)}</div><div class="account-institution">${ownerIcon[i.owner]||'💚'} ${esc(i.owner)} · ${esc(i.type)}</div></div><button class="task-del" onclick="deleteInvestment('${i.id}')">✕</button></div><div class="account-balance">${fmt(i.balance)}</div></div>`).join('');
+}
+function showAddInvestModal() {
+  document.getElementById('inv-name').value=''; document.getElementById('inv-balance').value=''; document.getElementById('inv-type').value='Brokerage'; document.getElementById('inv-owner').value='Shared';
+  document.getElementById('addInvestModal').style.display='flex';
+}
+function hideAddInvestModal() { document.getElementById('addInvestModal').style.display='none'; }
+async function saveInvestment() {
+  const name=document.getElementById('inv-name').value.trim(), balance=parseFloat(document.getElementById('inv-balance').value), type=document.getElementById('inv-type').value, owner=document.getElementById('inv-owner').value;
+  if(!name||isNaN(balance)){ toast('Fill in a name and balance'); return; }
+  try {
+    const res = await fetch(`${BACKEND}/api/investments`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,balance,type,owner})});
+    if(!res.ok) throw new Error('save failed');
+    hideAddInvestModal(); toast('Added'); fetchInvestments();
+  } catch(e){ console.error(e); toast('Could not save — try again'); }
+}
+async function deleteInvestment(id) {
+  investments = investments.filter(i=>i.id!==id); renderNetWorth();
+  try { await fetch(`${BACKEND}/api/investments/${id}`,{method:'DELETE'}); } catch(e){ console.error(e); }
+}
+
+// ===== Shared notes on a transaction =====
+let txNotesCurrentId = null;
+async function openTxNotes(txId, title) {
+  if(!txId) return;
+  txNotesCurrentId = txId;
+  document.getElementById('txNotesTitle').textContent = title||'Transaction';
+  document.getElementById('tx-note-text').value='';
+  const listEl = document.getElementById('txNotesList');
+  listEl.innerHTML = 'Loading…';
+  document.getElementById('txNotesModal').style.display='flex';
+  try {
+    const res = await fetch(`${BACKEND}/api/tx-notes/${encodeURIComponent(txId)}`);
+    const data = await res.json();
+    renderTxNotesList(data.notes||[]);
+  } catch(e){ console.error(e); listEl.innerHTML=''; }
+}
+function renderTxNotesList(notes) {
+  const el = document.getElementById('txNotesList');
+  if(!notes.length){ el.innerHTML='<div class="empty-state" style="padding:16px"><div class="empty-icon">💬</div>No notes yet — be the first.</div>'; return; }
+  el.innerHTML = notes.map(n=>`<div class="note-row"><span class="note-who">${esc(n.who)}:</span> ${esc(n.text)}</div>`).join('');
+}
+function hideTxNotes() { document.getElementById('txNotesModal').style.display='none'; }
+async function saveTxNote() {
+  const text = document.getElementById('tx-note-text').value.trim();
+  if(!text || !txNotesCurrentId) return;
+  try {
+    const res = await fetch(`${BACKEND}/api/tx-notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({txId:txNotesCurrentId, who:whoAmI()||'Shared', text})});
+    const data = await res.json();
+    if(!res.ok) throw new Error('save failed');
+    document.getElementById('tx-note-text').value='';
+    const res2 = await fetch(`${BACKEND}/api/tx-notes/${encodeURIComponent(txNotesCurrentId)}`);
+    const data2 = await res2.json();
+    renderTxNotesList(data2.notes||[]);
+  } catch(e){ console.error(e); toast('Could not save note'); }
+}
+
 load(); updateMonthLabel(); renderAll(); resumePlaidOAuth(); checkGoogleStatus(); checkWhoAmI(); fetchTasks(); fetchDueSoon();
+fetchSpendingAlerts(); fetchSubscriptions(); fetchInvestments();
 if(window.location.hash==='#calendar') switchSection('calendar');
 if('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 </script>
